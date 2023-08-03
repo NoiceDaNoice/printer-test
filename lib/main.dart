@@ -1,5 +1,12 @@
+import 'dart:io';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
+
 import 'package:blue_thermal_printer/blue_thermal_printer.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 void main() {
   runApp(const MyApp());
@@ -59,10 +66,12 @@ class _MyHomePageState extends State<MyHomePage> {
   List<BluetoothDevice> devices = [];
   BluetoothDevice? selectedDevice;
   BlueThermalPrinter printer = BlueThermalPrinter.instance;
+  TextEditingController qrController = TextEditingController();
 
   Future<List<BluetoothDevice>> getDevices() async {
-    // devices = await printer.getBondedDevices();
-    // print('devicenya ada ga ' + devices.toString());
+    devices = await printer.getBondedDevices();
+    print('devicenya ada ga ' + devices.length.toString());
+    setState(() {});
     return printer.getBondedDevices();
   }
 
@@ -72,7 +81,7 @@ class _MyHomePageState extends State<MyHomePage> {
     getDevices();
   }
 
-  openDialog() {
+  openDialog(bytes) {
     getDevices().then(
       (value) => {
         Future.delayed(
@@ -163,15 +172,20 @@ class _MyHomePageState extends State<MyHomePage> {
                                 //   print(e);
                                 // }
 
-                                printer.printImage('assets/images/qrcode.png');
-                                printer.printQRcode(
-                                    '00020101021226650014ID.SPINPAY.WWW01189360081632110103190214131432110103190303UBE51440014ID.CO.QRIS.WWW0215ID20210661250750303UBE52047523530336054065000.05802ID5912Safe Parking6013Jakarta Pusat61051034062360704A334602464b60fe97896267c07fc1b1863048D10',
-                                    255,
-                                    255,
-                                    0);
+                                printer.printImageBytes(bytes);
+
+                                printer.printNewLine();
+                                printer.printNewLine();
+                                printer.printNewLine();
+                                print('qr printed');
+                                // printer.printQRcode(
+                                //     '00020101021226650014ID.SPINPAY.WWW01189360081632110103190214131432110103190303UBE51440014ID.CO.QRIS.WWW0215ID20210661250750303UBE52047523530336054065000.05802ID5912Safe Parking6013Jakarta Pusat61051034062360704A334602464b60fe97896267c07fc1b1863048D10',
+                                //     255,
+                                //     255,
+                                //     0);
                                 // printer.printImage('/assets/images/logo.png');
-                                printer.printNewLine();
-                                printer.printNewLine();
+
+                                print('new line');
                                 // printer.printNewLine();
                                 // printer.printNewLine();
                               } else {
@@ -211,12 +225,6 @@ class _MyHomePageState extends State<MyHomePage> {
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
     return Scaffold(
       appBar: AppBar(
         // TRY THIS: Try changing the color here to a specific color (to
@@ -227,15 +235,127 @@ class _MyHomePageState extends State<MyHomePage> {
         // the App.build method, and use it to set our appbar title.
         title: Text(widget.title),
       ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: TextButton(
-          onPressed: () {
-            openDialog();
-          },
-          child: Text('print'),
-        ),
+      body: ListView(
+        children: [
+          TextFormField(
+            controller: qrController,
+          ),
+          TextButton(
+            onPressed: () {
+              setState(() {});
+            },
+            child: Text(
+              'change qr data',
+            ),
+          ),
+          Center(
+            child: SizedBox(
+              height: 250,
+              width: 250,
+              child: QrImageView(
+                data: qrController.text,
+              ),
+            ),
+          ),
+          Column(
+            children: [
+              DropdownButton<BluetoothDevice>(
+                  hint: const Text('Select Thermal Printer'),
+                  value: selectedDevice,
+                  items: devices
+                      .map((e) => DropdownMenuItem(
+                            child: Text(e.name.toString()),
+                            value: e,
+                          ))
+                      .toList(),
+                  onChanged: (device) {
+                    setState(() {
+                      selectedDevice = device;
+                    });
+                  }),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  ElevatedButton(
+                      onPressed: () {
+                        printer.connect(selectedDevice!);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Connected'),
+                          ),
+                        );
+                      },
+                      child: const Text('Connect')),
+                  ElevatedButton(
+                      onPressed: () {
+                        printer.disconnect();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Disconnected'),
+                          ),
+                        );
+                      },
+                      child: const Text('Disconnect'))
+                ],
+              ),
+              ElevatedButton(
+                onPressed: () async {
+                  if ((await printer.isConnected)!) {
+                    print('printed');
+                    QrPainter(
+                      gapless: true,
+                      data: qrController.text,
+                      eyeStyle: const QrEyeStyle(
+                          color: Colors.black, eyeShape: QrEyeShape.square),
+                      emptyColor: Colors.white,
+                      version: QrVersions.auto,
+                    ).toImageData(255).then((value) {
+                      Uint8List imageBytesFromAsset = value!.buffer.asUint8List(
+                          value.offsetInBytes, value.lengthInBytes);
+                      // printer.printCustom(qrController.text, 3, 0);
+                      printer.printNewLine();
+                      printer.printImageBytes(imageBytesFromAsset);
+                      printer.printNewLine();
+                      printer.printNewLine();
+                      printer.printNewLine();
+                    });
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Harap connect dahulu.'),
+                      ),
+                    );
+                  }
+                },
+                child: Text('Test Print'),
+              ),
+            ],
+          ),
+          // Center(
+          //   // Center is a layout widget. It takes a single child and positions it
+          //   // in the middle of the parent.
+          //   child: TextButton(
+          //     onPressed: () async {
+          //       ByteData? qrBytes = await QrPainter(
+          //         gapless: true,
+          //         data:
+          //             "00020101021226650014ID.SPINPAY.WWW01189360081632110103190214131432110103190303UBE51440014ID.CO.QRIS.WWW0215ID20210661250750303UBE52047523530336054065000.05802ID5912Safe Parking6013Jakarta Pusat61051034062360704A334602464b60fe97896267c07fc1b1863048D10",
+          //         eyeStyle: const QrEyeStyle(
+          //             color: Colors.black, eyeShape: QrEyeShape.square),
+          //         emptyColor: Colors.white,
+          //         version: QrVersions.auto,
+          //       ).toImageData(255);
+
+          //       // ByteData bytesAsset =
+          //       //     await rootBundle.load("assets/images/qr285.png");
+          //       Uint8List imageBytesFromAsset = qrBytes!.buffer
+          //           .asUint8List(qrBytes.offsetInBytes, qrBytes.lengthInBytes);
+          //       openDialog(imageBytesFromAsset);
+          //     },
+          //     child: Text('print'),
+          //   ),
+          // ),
+        ],
       ),
     );
   }
